@@ -64,6 +64,8 @@ class Client extends EventEmitter
 
         $deferred = $this->connectDeferred = new Deferred();
         $client = $this;
+		$loop = $this->loop;
+		$output = $this->output;
 
         $timer = $this->loop->addTimer($timeout, function () use ($client, $deferred) {
             $deferred->reject(new ConnectionException('Connection timeout'));
@@ -79,12 +81,42 @@ class Client extends EventEmitter
         $frame = $this->packageCreator->connect(
             $this->options['vhost'],
             $this->options['login'],
-            $this->options['passcode']
+            $this->options['passcode'],
+            $this->options['heart-beat']
         );
         $this->output->sendFrame($frame);
 
-        return $this->connectPromise = $deferred->promise()->then(function () use ($client) {
+		// now calculate the outgoing heart-beat rate 
+		// - if we are using heart-beat
+		$outgoingHeartbeatSecs = 0;
+		if ($this->options['heart-beat'] != null) {
+			// The format of the heartbeat header is 
+			// "{outgoingms}:{incomingms}" - we want the
+			// value for the first and to conovert it to
+			// seconds
+			$heartbeatParts = explode(',', $this->options['heart-beat']);
+			$outgoingHeartbeatSecs = intval($heartbeatParts[0] / 1000);
+		
+			// the Timer takes an argument in seconds - make sure the 
+			// timer value never drops to 0
+			if ($outgoingHeartbeatSecs == 0) {
+				$outgoingHeartbeatSecs = 1;
+			}
+		}
+
+        return $this->connectPromise = $deferred->promise()->then(function () use ($client, $loop, $output, $outgoingHeartbeatSecs) {
             $client->setConnectionStatus('connected');
+
+			// if we are sending an outgoinig heartbeat
+			// create a timer to send the newline character
+			if($outgoingHeartbeatSecs > 0) {
+				$loop->addPeriodicTimer(
+					$outgoingHeartbeatSecs,
+					function() use($output) {
+						// The heartbeat output is a newline
+						$output->emit('data', array("\n")); 
+					});
+			}
             return $client;
         });
     }
@@ -240,6 +272,7 @@ class Client extends EventEmitter
             'vhost'     => isset($options['host']) ? $options['host'] : null,
             'login'     => null,
             'passcode'  => null,
+            'heart-beat' => isset($options['heart-beat']) ? $options['heart-beat'] : null,
         ), $options);
     }
 
