@@ -98,8 +98,10 @@ class Client extends EventEmitter
 			$outgoingHeartbeatSecs = intval($heartbeatParts[0] / 1000);
 		
 			// the Timer takes an argument in seconds - make sure the 
-			// timer value never drops to 0
-			if ($outgoingHeartbeatSecs == 0) {
+			// timer value never drops to 0 where heartbeat
+			// is sub-1000 millisecnds
+			if (intval($heartbeatParts[0]) > 0 
+				&& $outgoingHeartbeatSecs == 0) {
 				$outgoingHeartbeatSecs = 1;
 			}
 		}
